@@ -7,10 +7,17 @@ This is a temporary repository for the "Lings Linux" Organization on GitHub, I m
 - create your config directory and file: ~/.config/novawm/novawm.conf
 - and you are basically done
 ## demo config (default):
+```conf
 master_factor = 0.6
 border_width = 2
 border_color_active = 0x00ff00
 border_color_inactive = 0x222222
+gaps_inner = 5
+gaps_outer = 10
+focus_follows_mouse = true
+
+exec-once = picom --experimental-backends
+exec-once = polybar mybar
 
 bind = SUPER, Return, spawn, kitty
 bind = SUPER, Q, killactive
@@ -20,3 +27,4 @@ bind = SUPER, K, focusprev
 bind = SUPER, H, shrink
 bind = SUPER, L, grow
 bind = SUPER SHIFT, E, quit
+```
