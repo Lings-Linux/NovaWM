@@ -1,125 +1,139 @@
 #include "novawm.h"
 #include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
+#include <xcb/xcb.h>
 
-static void apply_client_border(struct novawm_server *srv,
-                                struct novawm_client *c,
-                                bool focused) {
-    uint32_t values[2];
-    values[0] = focused ? srv->cfg.border_color_active
-                        : srv->cfg.border_color_inactive;
-    values[1] = srv->cfg.border_width;
-
-    xcb_change_window_attributes(srv->conn, c->win, XCB_CW_BORDER_PIXEL, &values[0]);
-    xcb_configure_window(srv->conn, c->win,
-                         XCB_CONFIG_WINDOW_BORDER_WIDTH, &values[1]);
-}
-
-void novawm_arrange(struct novawm_server *srv) {
-    novawm_layout_master_stack(srv);
-}
-
-struct novawm_client *novawm_find_client(struct novawm_server *srv, xcb_window_t win) {
-    struct novawm_client *c = srv->mon.clients;
-    while (c) {
-        if (c->win == win) return c;
-        c = c->next;
+struct novawm_client *novawm_find_client(struct novawm_server *srv,
+                                         xcb_window_t win) {
+    for (int ws = 0; ws < NOVAWM_WORKSPACES; ws++) {
+        struct novawm_client *c = srv->mon.ws[ws].clients;
+        while (c) {
+            if (c->win == win)
+                return c;
+            c = c->next;
+        }
     }
     return NULL;
-}
+                                         }
 
-void novawm_focus_client(struct novawm_server *srv, struct novawm_client *c) {
-    if (!c) return;
-    srv->mon.focused = c;
+                                         void novawm_focus_client(struct novawm_server *srv, struct novawm_client *c) {
+                                             if (!c)
+                                                 return;
 
-    xcb_set_input_focus(srv->conn, XCB_INPUT_FOCUS_POINTER_ROOT,
-                        c->win, XCB_CURRENT_TIME);
+                                             /* focus per current workspace */
+                                             struct novawm_workspace *ws = &srv->mon.ws[srv->mon.current_ws];
+                                             if (ws->focused == c)
+                                                 return;
 
-    struct novawm_client *it = srv->mon.clients;
-    while (it) {
-        apply_client_border(srv, it, it == c);
-        it = it->next;
-    }
-    xcb_flush(srv->conn);
-}
+                                             ws->focused = c;
 
-void novawm_manage_window(struct novawm_server *srv, xcb_window_t win) {
-    /* Ignore override-redirect windows (menus, tooltips) */
-    xcb_get_window_attributes_cookie_t ac =
-        xcb_get_window_attributes(srv->conn, win);
-    xcb_get_window_attributes_reply_t *ar =
-        xcb_get_window_attributes_reply(srv->conn, ac, NULL);
-    if (!ar) return;
-    if (ar->override_redirect) {
-        free(ar);
-        return;
-    }
-    free(ar);
+                                             uint32_t values[1] = { XCB_STACK_MODE_ABOVE };
+                                             xcb_configure_window(
+                                                 srv->conn,
+                                                 c->win,
+                                                 XCB_CONFIG_WINDOW_STACK_MODE,
+                                                 values
+                                             );
 
-    xcb_get_geometry_cookie_t gc = xcb_get_geometry(srv->conn, win);
-    xcb_get_geometry_reply_t *gr = xcb_get_geometry_reply(srv->conn, gc, NULL);
-    if (!gr) return;
+                                             xcb_set_input_focus(
+                                                 srv->conn,
+                                                 XCB_INPUT_FOCUS_POINTER_ROOT,
+                                                 c->win,
+                                                 XCB_CURRENT_TIME
+                                             );
 
-    struct novawm_client *c = calloc(1, sizeof *c);
-    c->win = win;
-    c->x = gr->x;
-    c->y = gr->y;
-    c->w = gr->width;
-    c->h = gr->height;
-    c->floating = false;
-    c->fullscreen = false;
-    free(gr);
+                                             novawm_arrange(srv);
+                                         }
 
-    /* Subscribe to events on this window */
-    uint32_t mask = XCB_EVENT_MASK_ENTER_WINDOW |
-                    XCB_EVENT_MASK_FOCUS_CHANGE |
-                    XCB_EVENT_MASK_BUTTON_PRESS |
-                    XCB_EVENT_MASK_BUTTON_RELEASE |
-                    XCB_EVENT_MASK_POINTER_MOTION |
-                    XCB_EVENT_MASK_STRUCTURE_NOTIFY;
-    uint32_t val[] = { mask };
-    xcb_change_window_attributes(srv->conn, win, XCB_CW_EVENT_MASK, val);
+                                         void novawm_manage_window(struct novawm_server *srv, xcb_window_t win) {
+                                             /* get attributes */
+                                             xcb_get_window_attributes_cookie_t ac =
+                                             xcb_get_window_attributes(srv->conn, win);
+                                             xcb_get_window_attributes_reply_t *ar =
+                                             xcb_get_window_attributes_reply(srv->conn, ac, NULL);
+                                             if (!ar)
+                                                 return;
 
-    /* Insert at head of client list */
-    c->next = srv->mon.clients;
-    srv->mon.clients = c;
+                                             if (ar->override_redirect) {
+                                                 free(ar);
+                                                 return;
+                                             }
 
-    /* Give it a border+focus and map */
-    apply_client_border(srv, c, true);
-    xcb_map_window(srv->conn, win);
+                                             free(ar);
 
-    novawm_focus_client(srv, c);
-    novawm_arrange(srv);
-}
+                                             struct novawm_client *c = calloc(1, sizeof *c);
+                                             if (!c)
+                                                 return;
 
-void novawm_unmanage_window(struct novawm_server *srv, struct novawm_client *c) {
-    if (!c) return;
+                                             c->win = win;
+                                             c->floating = false;
+                                             c->ws = srv->mon.current_ws;
+                                             c->next = NULL;
 
-    if (srv->mon.clients == c) {
-        srv->mon.clients = c->next;
-    } else {
-        struct novawm_client *p = srv->mon.clients;
-        while (p && p->next != c) p = p->next;
-        if (p) p->next = c->next;
-    }
+                                             struct novawm_workspace *ws = &srv->mon.ws[c->ws];
 
-    if (srv->mon.focused == c)
-        srv->mon.focused = srv->mon.clients;
+                                             /* insert at head of workspace list */
+                                             c->next = ws->clients;
+                                             ws->clients = c;
 
-    free(c);
-    novawm_arrange(srv);
-}
+                                             /* ensure window is mapped and we receive enter events */
+                                             uint32_t mask = XCB_EVENT_MASK_ENTER_WINDOW |
+                                             XCB_EVENT_MASK_FOCUS_CHANGE |
+                                             XCB_EVENT_MASK_PROPERTY_CHANGE;
+                                             uint32_t val = mask;
+                                             xcb_change_window_attributes(
+                                                 srv->conn,
+                                                 win,
+                                                 XCB_CW_EVENT_MASK,
+                                                 &val
+                                             );
+                                             xcb_map_window(srv->conn, win);
 
-void novawm_kill_focused(struct novawm_server *srv) {
-    struct novawm_client *c = srv->mon.focused;
-    if (!c) return;
-    xcb_kill_client(srv->conn, c->win);
-    xcb_flush(srv->conn);
-}
+                                             novawm_focus_client(srv, c);
+                                         }
 
-void novawm_toggle_floating(struct novawm_server *srv) {
-    struct novawm_client *c = srv->mon.focused;
-    if (!c) return;
-    c->floating = !c->floating;
-    novawm_arrange(srv);
-}
+                                         void novawm_unmanage_window(struct novawm_server *srv, struct novawm_client *c) {
+                                             if (!c)
+                                                 return;
+
+                                             int ws_idx = c->ws;
+                                             if (ws_idx < 0 || ws_idx >= NOVAWM_WORKSPACES)
+                                                 ws_idx = srv->mon.current_ws;
+
+                                             struct novawm_workspace *ws = &srv->mon.ws[ws_idx];
+
+                                             struct novawm_client **pp = &ws->clients;
+                                             while (*pp && *pp != c) {
+                                                 pp = &(*pp)->next;
+                                             }
+                                             if (*pp == c) {
+                                                 *pp = c->next;
+                                             }
+
+                                             if (ws->focused == c)
+                                                 ws->focused = ws->clients;
+
+                                             free(c);
+
+                                             novawm_arrange(srv);
+                                         }
+
+                                         void novawm_toggle_floating(struct novawm_server *srv) {
+                                             struct novawm_workspace *ws = &srv->mon.ws[srv->mon.current_ws];
+                                             struct novawm_client *c = ws->focused;
+                                             if (!c)
+                                                 return;
+
+                                             c->floating = !c->floating;
+                                             novawm_arrange(srv);
+                                         }
+
+                                         void novawm_kill_focused(struct novawm_server *srv) {
+                                             struct novawm_workspace *ws = &srv->mon.ws[srv->mon.current_ws];
+                                             struct novawm_client *c = ws->focused;
+                                             if (!c)
+                                                 return;
+
+                                             xcb_kill_client(srv->conn, c->win);
+                                             xcb_flush(srv->conn);
+                                         }

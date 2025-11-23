@@ -1,84 +1,141 @@
 #include "novawm.h"
+#include <xcb/xcb.h>
+#include <stdlib.h>
 
-void novawm_layout_master_stack(struct novawm_server *srv) {
-    struct novawm_monitor *m = &srv->mon;
-    int bw = srv->cfg.border_width;
-    int gi = srv->cfg.gaps_inner;
-    int go = srv->cfg.gaps_outer;
+static void apply_client_geometry(struct novawm_server *srv,
+                                  struct novawm_client *c,
+                                  int x, int y, int w, int h) {
+    struct novawm_workspace *ws = &srv->mon.ws[srv->mon.current_ws];
 
-    /* Count tiled clients */
-    int tiled = 0;
-    struct novawm_client *c;
-    for (c = m->clients; c; c = c->next) {
-        if (!c->floating && !c->fullscreen)
-            tiled++;
-    }
+    uint32_t geom[4] = {
+        (uint32_t)x,
+        (uint32_t)y,
+        (uint32_t)w,
+        (uint32_t)h
+    };
 
-    if (tiled == 0)
-        return;
+    xcb_configure_window(
+        srv->conn,
+        c->win,
+        XCB_CONFIG_WINDOW_X |
+        XCB_CONFIG_WINDOW_Y |
+        XCB_CONFIG_WINDOW_WIDTH |
+        XCB_CONFIG_WINDOW_HEIGHT,
+        geom
+    );
 
-    int x0 = m->x + go;
-    int y0 = m->y + go;
-    int ww = m->w - 2 * go;
-    int wh = m->h - 2 * go;
+    c->x = x;
+    c->y = y;
+    c->w = w;
+    c->h = h;
 
-    /* If master_factor is weird, clamp it */
-    if (srv->cfg.master_factor < 0.05f) srv->cfg.master_factor = 0.05f;
-    if (srv->cfg.master_factor > 0.95f) srv->cfg.master_factor = 0.95f;
+    uint32_t bw = srv->cfg.border_width;
+    xcb_configure_window(
+        srv->conn,
+        c->win,
+        XCB_CONFIG_WINDOW_BORDER_WIDTH,
+        &bw
+    );
 
-    int master_h = (int)(wh * srv->cfg.master_factor);
-    int stack_h = wh - master_h;
+    uint32_t color = (c == ws->focused)
+    ? srv->cfg.border_color_active
+    : srv->cfg.border_color_inactive;
 
-    int idx = 0;
-    for (c = m->clients; c; c = c->next) {
-        if (c->floating || c->fullscreen)
-            continue;
+    xcb_change_window_attributes(
+        srv->conn,
+        c->win,
+        XCB_CW_BORDER_PIXEL,
+        &color
+    );
+                                  }
 
-        int nx, ny, nw, nh;
+                                  void novawm_arrange(struct novawm_server *srv) {
+                                      struct novawm_monitor   *m  = &srv->mon;
+                                      struct novawm_workspace *ws = &m->ws[m->current_ws];
 
-        if (idx == 0) {
-            /* Master */
-            nx = x0 + gi / 2;
-            ny = y0 + gi / 2;
-            nw = ww - gi;
-            nh = master_h - gi;
-        } else {
-            int stack_idx = idx - 1;
-            int stack_count = tiled - 1;
-            int each = stack_count > 0 ? stack_h / stack_count : stack_h;
-            int y = y0 + master_h + stack_idx * each;
+                                      /* Count tiled (non-floating) clients */
+                                      int tiled = 0;
+                                      for (struct novawm_client *c = ws->clients; c; c = c->next) {
+                                          if (!c->floating)
+                                              tiled++;
+                                      }
 
-            nx = x0 + gi / 2;
-            ny = y + gi / 2;
-            nw = ww - gi;
-            nh = each - gi;
-        }
+                                      int outer = srv->cfg.gaps_outer;
+                                      int inner = srv->cfg.gaps_inner;
 
-        if (nw < 50) nw = 50;
-        if (nh < 50) nh = 50;
+                                      int mx = m->x + outer;
+                                      int my = m->y + outer;
+                                      int mw = m->w - 2 * outer;
+                                      int mh = m->h - 2 * outer;
 
-        uint32_t values[4] = {
-            (uint32_t)nx,
-            (uint32_t)ny,
-            (uint32_t)nw,
-            (uint32_t)nh
-        };
+                                      if (tiled <= 0) {
+                                          /* still update borders of floating clients */
+                                          for (struct novawm_client *c = ws->clients; c; c = c->next) {
+                                              uint32_t bw = srv->cfg.border_width;
+                                              xcb_configure_window(
+                                                  srv->conn,
+                                                  c->win,
+                                                  XCB_CONFIG_WINDOW_BORDER_WIDTH,
+                                                  &bw
+                                              );
+                                              uint32_t color = (c == ws->focused)
+                                              ? srv->cfg.border_color_active
+                                              : srv->cfg.border_color_inactive;
+                                              xcb_change_window_attributes(
+                                                  srv->conn,
+                                                  c->win,
+                                                  XCB_CW_BORDER_PIXEL,
+                                                  &color
+                                              );
+                                          }
+                                          xcb_flush(srv->conn);
+                                          return;
+                                      }
 
-        xcb_configure_window(srv->conn, c->win,
-                             XCB_CONFIG_WINDOW_X |
-                             XCB_CONFIG_WINDOW_Y |
-                             XCB_CONFIG_WINDOW_WIDTH |
-                             XCB_CONFIG_WINDOW_HEIGHT,
-                             values);
+                                      /* simple vertical tiling:
+                                       * each tiled client gets a vertical slot, full width
+                                       */
+                                      int total_height = mh - inner * (tiled + 1);
+                                      if (total_height < 1) total_height = mh;
+                                      int slot_h = total_height / tiled;
+                                      if (slot_h < 1) slot_h = 1;
 
-        /* write back so mouse drag uses correct values */
-        c->x = nx;
-        c->y = ny;
-        c->w = nw;
-        c->h = nh;
+                                      int y = my + inner;
 
-        idx++;
-    }
+                                      for (struct novawm_client *c = ws->clients; c; c = c->next) {
+                                          if (c->floating)
+                                              continue;
 
-    xcb_flush(srv->conn);
-}
+                                          int x = mx + inner;
+                                          int w = mw - 2 * inner;
+                                          int h = slot_h;
+
+                                          apply_client_geometry(srv, c, x, y, w, h);
+                                          y += slot_h + inner;
+                                      }
+
+                                      /* update borders for floating clients as well */
+                                      for (struct novawm_client *c = ws->clients; c; c = c->next) {
+                                          if (!c->floating)
+                                              continue;
+
+                                          uint32_t bw = srv->cfg.border_width;
+                                          xcb_configure_window(
+                                              srv->conn,
+                                              c->win,
+                                              XCB_CONFIG_WINDOW_BORDER_WIDTH,
+                                              &bw
+                                          );
+                                          uint32_t color = (c == ws->focused)
+                                          ? srv->cfg.border_color_active
+                                          : srv->cfg.border_color_inactive;
+                                          xcb_change_window_attributes(
+                                              srv->conn,
+                                              c->win,
+                                              XCB_CW_BORDER_PIXEL,
+                                              &color
+                                          );
+                                      }
+
+                                      xcb_flush(srv->conn);
+                                  }

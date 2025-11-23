@@ -132,7 +132,7 @@ bool novawm_config_load(struct novawm_config *cfg, const char *path) {
             if (!eq) continue;
             char *val = trim(eq+1);
             cfg->focus_follows_mouse =
-                (!strcasecmp(val, "true") || !strcasecmp(val, "yes") || !strcmp(val, "1"));
+            (!strcasecmp(val, "true") || !strcasecmp(val, "yes") || !strcmp(val, "1"));
             continue;
         }
 
@@ -179,4 +179,67 @@ void novawm_run_autostart(struct novawm_config *cfg) {
     for (int i = 0; i < cfg->autostart_len; i++) {
         novawm_spawn(cfg->autostart[i]);
     }
+}
+
+/* ------ Helpers we were missing ------ */
+
+/* Path to config:
+ *  $XDG_CONFIG_HOME/novawm/novawm.conf
+ * or
+ *  ~/.config/novawm/novawm.conf
+ */
+const char *novawm_get_config_path(void) {
+    static char buf[512];
+
+    const char *xdg = getenv("XDG_CONFIG_HOME");
+    if (xdg && *xdg) {
+        snprintf(buf, sizeof(buf), "%s/novawm/novawm.conf", xdg);
+        return buf;
+    }
+
+    const char *home = getenv("HOME");
+    if (!home || !*home) {
+        snprintf(buf, sizeof(buf), ".novawm.conf");
+        return buf;
+    }
+
+    snprintf(buf, sizeof(buf), "%s/.config/novawm/novawm.conf", home);
+    return buf;
+}
+
+/* Parse "SUPER, SHIFT", "ALT+CTRL", etc into XCB modifier mask. */
+uint16_t novawm_parse_mods(const char *s) {
+    if (!s) return 0;
+
+    uint16_t mods = 0;
+    char buf[128];
+
+    /* copy + lowercase */
+    size_t n = 0;
+    while (s[n] && n + 1 < sizeof(buf)) {
+        char c = s[n];
+        buf[n] = (char)tolower((unsigned char)c);
+        n++;
+    }
+    buf[n] = '\0';
+
+    const char *delims = " +\t,";
+    char *tok = strtok(buf, delims);
+    while (tok) {
+        if (!strcmp(tok, "shift")) {
+            mods |= XCB_MOD_MASK_SHIFT;
+        } else if (!strcmp(tok, "ctrl") || !strcmp(tok, "control")) {
+            mods |= XCB_MOD_MASK_CONTROL;
+        } else if (!strcmp(tok, "alt") || !strcmp(tok, "mod1")) {
+            mods |= XCB_MOD_MASK_1;   /* Alt usually Mod1 */
+        } else if (!strcmp(tok, "super") ||
+            !strcmp(tok, "win")   ||
+            !strcmp(tok, "logo")  ||
+            !strcmp(tok, "mod4")) {
+            mods |= XCB_MOD_MASK_4;   /* Super usually Mod4 */
+            }
+            tok = strtok(NULL, delims);
+    }
+
+    return mods;
 }
