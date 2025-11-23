@@ -87,6 +87,34 @@ void novawm_x11_grab_keys(struct novawm_server *srv) {
     xcb_flush(srv->conn);
 }
 
+static void novawm_x11_scan_existing(struct novawm_server *srv) {
+    xcb_query_tree_cookie_t qc = xcb_query_tree(srv->conn, srv->root);
+    xcb_query_tree_reply_t *qr = xcb_query_tree_reply(srv->conn, qc, NULL);
+    if (!qr) return;
+
+    int len = xcb_query_tree_children_length(qr);
+    xcb_window_t *children = xcb_query_tree_children(qr);
+
+    for (int i = 0; i < len; i++) {
+        xcb_window_t w = children[i];
+
+        xcb_get_window_attributes_cookie_t ac =
+            xcb_get_window_attributes(srv->conn, w);
+        xcb_get_window_attributes_reply_t *ar =
+            xcb_get_window_attributes_reply(srv->conn, ac, NULL);
+        if (!ar) continue;
+
+        /* manage only normal, viewable, non-override windows */
+        if (ar->map_state == XCB_MAP_STATE_VIEWABLE &&
+            !ar->override_redirect) {
+            novawm_manage_window(srv, w);
+        }
+        free(ar);
+    }
+
+    free(qr);
+}
+
 void novawm_x11_run(struct novawm_server *srv) {
     srv->running = true;
 

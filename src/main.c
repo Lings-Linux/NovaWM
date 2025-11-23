@@ -21,6 +21,10 @@ int main(int argc, char **argv) {
 
     novawm_x11_grab_keys(&srv);
     novawm_run_autostart(&srv.cfg);
+    
+    /* scan any already-mapped windows (in case autostart spawned things early) */
+    extern void novawm_x11_scan_existing(struct novawm_server *srv);
+    novawm_x11_scan_existing(&srv);
 
     fprintf(stderr, "NovaWM: running (config: %s)\n", cfg_path);
     novawm_x11_run(&srv);

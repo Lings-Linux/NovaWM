@@ -17,7 +17,6 @@ static void apply_client_border(struct novawm_server *srv,
 
 void novawm_arrange(struct novawm_server *srv) {
     novawm_layout_master_stack(srv);
-    xcb_flush(srv->conn);
 }
 
 struct novawm_client *novawm_find_client(struct novawm_server *srv, xcb_window_t win) {
@@ -45,6 +44,18 @@ void novawm_focus_client(struct novawm_server *srv, struct novawm_client *c) {
 }
 
 void novawm_manage_window(struct novawm_server *srv, xcb_window_t win) {
+    /* Ignore override-redirect windows (menus, tooltips) */
+    xcb_get_window_attributes_cookie_t ac =
+        xcb_get_window_attributes(srv->conn, win);
+    xcb_get_window_attributes_reply_t *ar =
+        xcb_get_window_attributes_reply(srv->conn, ac, NULL);
+    if (!ar) return;
+    if (ar->override_redirect) {
+        free(ar);
+        return;
+    }
+    free(ar);
+
     xcb_get_geometry_cookie_t gc = xcb_get_geometry(srv->conn, win);
     xcb_get_geometry_reply_t *gr = xcb_get_geometry_reply(srv->conn, gc, NULL);
     if (!gr) return;
@@ -73,6 +84,8 @@ void novawm_manage_window(struct novawm_server *srv, xcb_window_t win) {
     c->next = srv->mon.clients;
     srv->mon.clients = c;
 
+    /* Give it a border+focus and map */
+    apply_client_border(srv, c, true);
     xcb_map_window(srv->conn, win);
 
     novawm_focus_client(srv, c);
