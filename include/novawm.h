@@ -47,7 +47,7 @@ struct novawm_client {
     int x, y, w, h;
     bool floating;
     int  ws;                    /* workspace index 0..NOVAWM_WORKSPACES-1 */
-    bool ignore_unmap;          /* set when WM unmaps during workspace switch */
+    bool ignore_unmap;          /* unused now, but kept for compatibility */
     struct novawm_client *next; /* next in workspace list */
 };
 

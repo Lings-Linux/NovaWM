@@ -93,7 +93,6 @@ static void action_workspace(struct novawm_server *srv, const char *arg) {
     if (srv->mon.current_ws == idx)
         return;
 
-    int old_ws = srv->mon.current_ws;
     srv->mon.current_ws = idx;
 
     /* map current, unmap others */
@@ -104,8 +103,7 @@ static void action_workspace(struct novawm_server *srv, const char *arg) {
                 /* show windows on the new workspace */
                 xcb_map_window(srv->conn, c->win);
             } else {
-                /* hide windows from other workspaces – but don't unmanage */
-                c->ignore_unmap = true;
+                /* hide windows from other workspaces – we now ignore UnmapNotify */
                 xcb_unmap_window(srv->conn, c->win);
             }
             c = c->next;

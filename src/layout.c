@@ -49,11 +49,83 @@ static void apply_client_geometry(struct novawm_server *srv,
     );
 }
 
-/* master + stack layout:
- * - focused client is master
- * - master takes master_factor of width on the left
- * - others are stacked vertically on the right
+/* Recursive dwindle tiling:
+ * - arr[start] gets a slice of rect
+ * - remaining clients recurse into leftover space
+ * - splits alternate vertical / horizontal
  */
+static void dwindle_place(struct novawm_server *srv,
+                          struct novawm_workspace *ws,
+                          struct novawm_client **arr,
+                          int start, int end,
+                          int x, int y, int w, int h,
+                          int depth) {
+    int n = end - start;
+    if (n <= 0)
+        return;
+
+    int inner = srv->cfg.gaps_inner;
+    if (w <= 0 || h <= 0)
+        return;
+
+    if (n == 1) {
+        int gx = x + inner;
+        int gy = y + inner;
+        int gw = w - 2 * inner;
+        int gh = h - 2 * inner;
+        if (gw < 1) gw = 1;
+        if (gh < 1) gh = 1;
+        apply_client_geometry(srv, arr[start], gx, gy, gw, gh);
+        return;
+    }
+
+    float factor = srv->cfg.master_factor;
+    if (factor < 0.05f) factor = 0.05f;
+    if (factor > 0.95f) factor = 0.95f;
+
+    bool split_vert = (depth % 2 == 0);
+
+    if (split_vert) {
+        int w1 = (int)(w * factor);
+        if (w1 < 1) w1 = 1;
+        int w2 = w - w1;
+        if (w2 < 1) w2 = 1;
+
+        /* first client on the left */
+        int gx = x + inner;
+        int gy = y + inner;
+        int gw = w1 - 2 * inner;
+        int gh = h - 2 * inner;
+        if (gw < 1) gw = 1;
+        if (gh < 1) gh = 1;
+        apply_client_geometry(srv, arr[start], gx, gy, gw, gh);
+
+        /* rest on the right */
+        int x2 = x + w1;
+        dwindle_place(srv, ws, arr, start + 1, end,
+                      x2, y, w2, h, depth + 1);
+    } else {
+        int h1 = (int)(h * factor);
+        if (h1 < 1) h1 = 1;
+        int h2 = h - h1;
+        if (h2 < 1) h2 = 1;
+
+        /* first client on the top */
+        int gx = x + inner;
+        int gy = y + inner;
+        int gw = w - 2 * inner;
+        int gh = h1 - 2 * inner;
+        if (gw < 1) gw = 1;
+        if (gh < 1) gh = 1;
+        apply_client_geometry(srv, arr[start], gx, gy, gw, gh);
+
+        /* rest at the bottom */
+        int y2 = y + h1;
+        dwindle_place(srv, ws, arr, start + 1, end,
+                      x, y2, w, h2, depth + 1);
+    }
+}
+
 void novawm_arrange(struct novawm_server *srv) {
     struct novawm_monitor   *m  = &srv->mon;
     struct novawm_workspace *ws = &m->ws[m->current_ws];
@@ -66,7 +138,6 @@ void novawm_arrange(struct novawm_server *srv) {
     }
 
     int outer = srv->cfg.gaps_outer;
-    int inner = srv->cfg.gaps_inner;
 
     int mx = m->x + outer;
     int my = m->y + outer;
@@ -105,7 +176,7 @@ void novawm_arrange(struct novawm_server *srv) {
             arr[idx++] = c;
     }
 
-    /* Ensure focused client is master (index 0). */
+    /* Make sure focused is first (Hyprland-style focus bias). */
     if (ws->focused) {
         int fi = -1;
         for (int i = 0; i < tiled; i++) {
@@ -121,55 +192,8 @@ void novawm_arrange(struct novawm_server *srv) {
         }
     }
 
-    float factor = srv->cfg.master_factor;
-    if (factor < 0.05f) factor = 0.05f;
-    if (factor > 0.95f) factor = 0.95f;
-
-    /* If only one tiled client → full area. */
-    if (tiled == 1) {
-        int x = mx + inner;
-        int y = my + inner;
-        int w = mw - 2 * inner;
-        int h = mh - 2 * inner;
-        if (w < 1) w = 1;
-        if (h < 1) h = 1;
-        apply_client_geometry(srv, arr[0], x, y, w, h);
-    } else {
-        /* Master on the left, stack on the right. */
-        int master_w = (int)(mw * factor);
-        if (master_w < 1) master_w = 1;
-        int stack_w = mw - master_w - inner;
-        if (stack_w < 1) stack_w = 1;
-
-        /* Master rect */
-        int mx0 = mx + inner;
-        int my0 = my + inner;
-        int mw0 = master_w - inner;
-        int mh0 = mh - 2 * inner;
-        if (mw0 < 1) mw0 = 1;
-        if (mh0 < 1) mh0 = 1;
-
-        apply_client_geometry(srv, arr[0], mx0, my0, mw0, mh0);
-
-        /* Stack rect */
-        int sx = mx + master_w + inner;
-        int sy = my + inner;
-        int sw = stack_w - inner;
-        int sh = mh - 2 * inner;
-        if (sw < 1) sw = 1;
-        if (sh < 1) sh = 1;
-
-        int stack_count = tiled - 1;
-        int slot_h = (stack_count > 0) ? (sh - (inner * (stack_count - 1))) / stack_count : sh;
-        if (slot_h < 1) slot_h = 1;
-
-        int ty = sy;
-        for (int i = 1; i < tiled; i++) {
-            int th = slot_h;
-            apply_client_geometry(srv, arr[i], sx, ty, sw, th);
-            ty += th + inner;
-        }
-    }
+    /* Apply dwindle tiling to all tiled clients. */
+    dwindle_place(srv, ws, arr, 0, tiled, mx, my, mw, mh, 0);
 
     /* update borders for floating clients as well */
     for (struct novawm_client *c = ws->clients; c; c = c->next) {

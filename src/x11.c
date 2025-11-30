@@ -252,18 +252,13 @@ novawm_x11_run(struct novawm_server *srv) {
         } break;
 
         case XCB_UNMAP_NOTIFY: {
+            /* We ignore UnmapNotify for normal windows so workspace
+             * switching (which unmaps) does NOT unmanage clients. */
             xcb_unmap_notify_event_t *e =
                 (xcb_unmap_notify_event_t *)ev;
-            struct novawm_client *c =
-                novawm_find_client(srv, e->window);
-            if (c) {
-                if (c->ignore_unmap) {
-                    /* We caused this unmap (workspace switch) – keep client. */
-                    c->ignore_unmap = false;
-                } else {
-                    /* Client unmapped itself; we keep it until DestroyNotify. */
-                    /* no-op */
-                }
+            if (novawm_splash && e->window == novawm_splash) {
+                /* if splash got unmapped by something, just drop it */
+                novawm_splash = XCB_NONE;
             }
         } break;
 
