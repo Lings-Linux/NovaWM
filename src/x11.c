@@ -16,9 +16,9 @@ novawm_x11_show_splash(struct novawm_server *srv) {
     int y = (srv->mon.h - h) / 3;
 
     uint32_t mask =
-    XCB_CW_BACK_PIXEL |
-    XCB_CW_EVENT_MASK |
-    XCB_CW_OVERRIDE_REDIRECT;
+        XCB_CW_BACK_PIXEL |
+        XCB_CW_EVENT_MASK |
+        XCB_CW_OVERRIDE_REDIRECT;
 
     uint32_t values[3];
     values[0] = srv->screen->white_pixel;
@@ -50,7 +50,7 @@ novawm_x11_draw_splash(struct novawm_server *srv) {
         return;
 
     const char *msg =
-    "If you see this inside Xephyr, NovaWM works properly (maybe...)";
+        "If you see this inside Xephyr, NovaWM works properly (maybe...)";
 
     xcb_gcontext_t gc = xcb_generate_id(srv->conn);
     uint32_t gvals[2];
@@ -65,10 +65,10 @@ novawm_x11_draw_splash(struct novawm_server *srv) {
     xcb_image_text_8(
         srv->conn,
         (uint8_t)strlen(msg),
-                     novawm_splash,
-                     gc,
-                     10, 40,
-                     msg
+        novawm_splash,
+        gc,
+        10, 40,
+        msg
     );
 
     xcb_free_gc(srv->conn, gc);
@@ -85,7 +85,7 @@ novawm_x11_init(struct novawm_server *srv) {
     if (!disp || !*disp)
         disp = ":0";  /* fallback */
 
-        fprintf(stderr, "novawm: connecting to DISPLAY=\"%s\"\n", disp);
+    fprintf(stderr, "novawm: connecting to DISPLAY=\"%s\"\n", disp);
 
     srv->conn = xcb_connect(disp, &screen_num);
     if (xcb_connection_has_error(srv->conn)) {
@@ -104,21 +104,21 @@ novawm_x11_init(struct novawm_server *srv) {
 
     /* Try to become the WM */
     uint32_t mask =
-    XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
-    XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY   |
-    XCB_EVENT_MASK_STRUCTURE_NOTIFY      |
-    XCB_EVENT_MASK_PROPERTY_CHANGE       |
-    XCB_EVENT_MASK_BUTTON_PRESS          |
-    XCB_EVENT_MASK_BUTTON_RELEASE        |
-    XCB_EVENT_MASK_POINTER_MOTION        |
-    XCB_EVENT_MASK_ENTER_WINDOW          |
-    XCB_EVENT_MASK_KEY_PRESS;
+        XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT |
+        XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY   |
+        XCB_EVENT_MASK_STRUCTURE_NOTIFY      |
+        XCB_EVENT_MASK_PROPERTY_CHANGE       |
+        XCB_EVENT_MASK_BUTTON_PRESS          |
+        XCB_EVENT_MASK_BUTTON_RELEASE        |
+        XCB_EVENT_MASK_POINTER_MOTION        |
+        XCB_EVENT_MASK_ENTER_WINDOW          |
+        XCB_EVENT_MASK_KEY_PRESS;
 
     uint32_t values[] = { mask };
 
     xcb_void_cookie_t ck =
-    xcb_change_window_attributes_checked(
-        srv->conn, srv->root, XCB_CW_EVENT_MASK, values);
+        xcb_change_window_attributes_checked(
+            srv->conn, srv->root, XCB_CW_EVENT_MASK, values);
 
     xcb_generic_error_t *err = xcb_request_check(srv->conn, ck);
     if (err) {
@@ -175,7 +175,7 @@ novawm_x11_grab_keys(struct novawm_server *srv) {
             continue;
 
         xcb_keycode_t *codes =
-        xcb_key_symbols_get_keycode(srv->keysyms, b->keysym);
+            xcb_key_symbols_get_keycode(srv->keysyms, b->keysym);
         if (!codes) continue;
 
         for (xcb_keycode_t *c = codes; *c != XCB_NO_SYMBOL; c++) {
@@ -203,10 +203,10 @@ novawm_x11_scan_existing(struct novawm_server *srv) {
         xcb_window_t w = children[i];
 
         xcb_get_window_attributes_cookie_t ac =
-        xcb_get_window_attributes(srv->conn, w);
+            xcb_get_window_attributes(srv->conn, w);
 
         xcb_get_window_attributes_reply_t *ar =
-        xcb_get_window_attributes_reply(srv->conn, ac, NULL);
+            xcb_get_window_attributes_reply(srv->conn, ac, NULL);
 
         if (!ar) continue;
 
@@ -214,9 +214,9 @@ novawm_x11_scan_existing(struct novawm_server *srv) {
             ar->map_state == XCB_MAP_STATE_VIEWABLE &&
             !ar->override_redirect) {
             novawm_manage_window(srv, w);
-            }
+        }
 
-            free(ar);
+        free(ar);
     }
 
     free(qr);
@@ -233,103 +233,103 @@ novawm_x11_run(struct novawm_server *srv) {
         uint8_t type = ev->response_type & ~0x80;
 
         switch (type) {
-            case XCB_MAP_REQUEST: {
-                xcb_map_request_event_t *e =
+        case XCB_MAP_REQUEST: {
+            xcb_map_request_event_t *e =
                 (xcb_map_request_event_t *)ev;
-                novawm_manage_window(srv, e->window);
-            } break;
+            novawm_manage_window(srv, e->window);
+        } break;
 
-            case XCB_DESTROY_NOTIFY: {
-                xcb_destroy_notify_event_t *e =
+        case XCB_DESTROY_NOTIFY: {
+            xcb_destroy_notify_event_t *e =
                 (xcb_destroy_notify_event_t *)ev;
-                if (novawm_splash && e->window == novawm_splash) {
-                    novawm_splash = XCB_NONE;
-                } else {
-                    struct novawm_client *c =
-                    novawm_find_client(srv, e->window);
-                    if (c) novawm_unmanage_window(srv, c);
-                }
-            } break;
-
-            case XCB_UNMAP_NOTIFY: {
-                xcb_unmap_notify_event_t *e =
-                (xcb_unmap_notify_event_t *)ev;
+            if (novawm_splash && e->window == novawm_splash) {
+                novawm_splash = XCB_NONE;
+            } else {
                 struct novawm_client *c =
-                novawm_find_client(srv, e->window);
-                if (c) {
-                    if (c->ignore_unmap) {
-                        /* We caused this unmap (workspace switch) – keep client. */
-                        c->ignore_unmap = false;
-                    } else {
-                        /* Real unmap from client – unmanage it. */
-                        novawm_unmanage_window(srv, c);
-                    }
-                }
-            } break;
+                    novawm_find_client(srv, e->window);
+                if (c) novawm_unmanage_window(srv, c);
+            }
+        } break;
 
-            case XCB_CONFIGURE_REQUEST: {
-                xcb_configure_request_event_t *e =
+        case XCB_UNMAP_NOTIFY: {
+            xcb_unmap_notify_event_t *e =
+                (xcb_unmap_notify_event_t *)ev;
+            struct novawm_client *c =
+                novawm_find_client(srv, e->window);
+            if (c) {
+                if (c->ignore_unmap) {
+                    /* We caused this unmap (workspace switch) – keep client. */
+                    c->ignore_unmap = false;
+                } else {
+                    /* Client unmapped itself; we keep it until DestroyNotify. */
+                    /* no-op */
+                }
+            }
+        } break;
+
+        case XCB_CONFIGURE_REQUEST: {
+            xcb_configure_request_event_t *e =
                 (xcb_configure_request_event_t *)ev;
 
-                uint32_t mask = 0;
-                uint32_t vals[7];
-                int i = 0;
+            uint32_t mask = 0;
+            uint32_t vals[7];
+            int i = 0;
 
-                if (e->value_mask & XCB_CONFIG_WINDOW_X)
-                    vals[i] = e->x, mask |= XCB_CONFIG_WINDOW_X, i++;
-                if (e->value_mask & XCB_CONFIG_WINDOW_Y)
-                    vals[i] = e->y, mask |= XCB_CONFIG_WINDOW_Y, i++;
-                if (e->value_mask & XCB_CONFIG_WINDOW_WIDTH)
-                    vals[i] = e->width, mask |= XCB_CONFIG_WINDOW_WIDTH, i++;
-                if (e->value_mask & XCB_CONFIG_WINDOW_HEIGHT)
-                    vals[i] = e->height, mask |= XCB_CONFIG_WINDOW_HEIGHT, i++;
-                if (e->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH)
-                    vals[i] = e->border_width, mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH, i++;
-                if (e->value_mask & XCB_CONFIG_WINDOW_SIBLING)
-                    vals[i] = e->sibling, mask |= XCB_CONFIG_WINDOW_SIBLING, i++;
-                if (e->value_mask & XCB_CONFIG_WINDOW_STACK_MODE)
-                    vals[i] = e->stack_mode, mask |= XCB_CONFIG_WINDOW_STACK_MODE, i++;
+            if (e->value_mask & XCB_CONFIG_WINDOW_X)
+                vals[i] = e->x, mask |= XCB_CONFIG_WINDOW_X, i++;
+            if (e->value_mask & XCB_CONFIG_WINDOW_Y)
+                vals[i] = e->y, mask |= XCB_CONFIG_WINDOW_Y, i++;
+            if (e->value_mask & XCB_CONFIG_WINDOW_WIDTH)
+                vals[i] = e->width, mask |= XCB_CONFIG_WINDOW_WIDTH, i++;
+            if (e->value_mask & XCB_CONFIG_WINDOW_HEIGHT)
+                vals[i] = e->height, mask |= XCB_CONFIG_WINDOW_HEIGHT, i++;
+            if (e->value_mask & XCB_CONFIG_WINDOW_BORDER_WIDTH)
+                vals[i] = e->border_width, mask |= XCB_CONFIG_WINDOW_BORDER_WIDTH, i++;
+            if (e->value_mask & XCB_CONFIG_WINDOW_SIBLING)
+                vals[i] = e->sibling, mask |= XCB_CONFIG_WINDOW_SIBLING, i++;
+            if (e->value_mask & XCB_CONFIG_WINDOW_STACK_MODE)
+                vals[i] = e->stack_mode, mask |= XCB_CONFIG_WINDOW_STACK_MODE, i++;
 
-                xcb_configure_window(
-                    srv->conn, e->window, mask, vals);
-                xcb_flush(srv->conn);
-            } break;
+            xcb_configure_window(
+                srv->conn, e->window, mask, vals);
+            xcb_flush(srv->conn);
+        } break;
 
-            case XCB_EXPOSE: {
-                xcb_expose_event_t *e =
+        case XCB_EXPOSE: {
+            xcb_expose_event_t *e =
                 (xcb_expose_event_t *)ev;
 
-                if (novawm_splash && e->window == novawm_splash)
-                    novawm_x11_draw_splash(srv);
-            } break;
+            if (novawm_splash && e->window == novawm_splash)
+                novawm_x11_draw_splash(srv);
+        } break;
 
-            case XCB_KEY_PRESS:
-                novawm_handle_key_press(
-                    srv, (xcb_key_press_event_t *)ev);
-                break;
+        case XCB_KEY_PRESS:
+            novawm_handle_key_press(
+                srv, (xcb_key_press_event_t *)ev);
+            break;
 
-            case XCB_BUTTON_PRESS:
-                novawm_handle_button_press(
-                    srv, (xcb_button_press_event_t *)ev);
-                break;
+        case XCB_BUTTON_PRESS:
+            novawm_handle_button_press(
+                srv, (xcb_button_press_event_t *)ev);
+            break;
 
-            case XCB_BUTTON_RELEASE:
-                novawm_handle_button_release(
-                    srv, (xcb_button_release_event_t *)ev);
-                break;
+        case XCB_BUTTON_RELEASE:
+            novawm_handle_button_release(
+                srv, (xcb_button_release_event_t *)ev);
+            break;
 
-            case XCB_MOTION_NOTIFY:
-                novawm_handle_motion_notify(
-                    srv, (xcb_motion_notify_event_t *)ev);
-                break;
+        case XCB_MOTION_NOTIFY:
+            novawm_handle_motion_notify(
+                srv, (xcb_motion_notify_event_t *)ev);
+            break;
 
-            case XCB_ENTER_NOTIFY:
-                novawm_handle_enter_notify(
-                    srv, (xcb_enter_notify_event_t *)ev);
-                break;
+        case XCB_ENTER_NOTIFY:
+            novawm_handle_enter_notify(
+                srv, (xcb_enter_notify_event_t *)ev);
+            break;
 
-            default:
-                break;
+        default:
+            break;
         }
 
         free(ev);
