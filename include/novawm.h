@@ -47,6 +47,7 @@ struct novawm_client {
     int x, y, w, h;
     bool floating;
     int  ws;                    /* workspace index 0..NOVAWM_WORKSPACES-1 */
+    bool ignore_unmap;          /* set when WM unmaps during workspace switch */
     struct novawm_client *next; /* next in workspace list */
 };
 
@@ -78,8 +79,8 @@ struct novawm_server {
     xcb_window_t       root;
     xcb_key_symbols_t *keysyms;
 
-    struct novawm_monitor   mon;
-    struct novawm_config    cfg;
+    struct novawm_monitor    mon;
+    struct novawm_config     cfg;
     struct novawm_drag_state drag;
 
     bool running;
@@ -126,9 +127,6 @@ void novawm_handle_enter_notify(struct novawm_server *srv,
                                 xcb_enter_notify_event_t *ev);
 
 /* --- util --- */
-
-/* NEW: remember the DISPLAY NovaWM is using */
-void         novawm_init_display_env(void);
 
 void         novawm_spawn(const char *cmd);
 uint16_t     novawm_clean_mods(uint16_t state);
