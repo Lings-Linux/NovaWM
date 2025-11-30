@@ -81,7 +81,6 @@ bool
 novawm_x11_init(struct novawm_server *srv) {
     int screen_num = 0;
 
-    /* FIXED: NEVER USE xcb_connect(NULL) — it ignores DISPLAY on some systems */
     const char *disp = getenv("DISPLAY");
     if (!disp || !*disp)
         disp = ":0";  /* fallback */
@@ -257,7 +256,15 @@ novawm_x11_run(struct novawm_server *srv) {
                 (xcb_unmap_notify_event_t *)ev;
                 struct novawm_client *c =
                 novawm_find_client(srv, e->window);
-                if (c) novawm_unmanage_window(srv, c);
+                if (c) {
+                    if (c->ignore_unmap) {
+                        /* We caused this unmap (workspace switch) – keep client. */
+                        c->ignore_unmap = false;
+                    } else {
+                        /* Real unmap from client – unmanage it. */
+                        novawm_unmanage_window(srv, c);
+                    }
+                }
             } break;
 
             case XCB_CONFIGURE_REQUEST: {

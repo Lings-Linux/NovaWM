@@ -68,6 +68,7 @@ struct novawm_client *novawm_find_client(struct novawm_server *srv,
                                              c->win = win;
                                              c->floating = false;
                                              c->ws = srv->mon.current_ws;
+                                             c->ignore_unmap = false;
                                              c->next = NULL;
 
                                              struct novawm_workspace *ws = &srv->mon.ws[c->ws];

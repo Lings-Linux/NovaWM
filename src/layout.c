@@ -53,7 +53,7 @@ static void apply_client_geometry(struct novawm_server *srv,
                                       struct novawm_monitor   *m  = &srv->mon;
                                       struct novawm_workspace *ws = &m->ws[m->current_ws];
 
-                                      /* Count tiled (non-floating) clients */
+                                      /* Count tiled (non-floating) clients and collect them. */
                                       int tiled = 0;
                                       for (struct novawm_client *c = ws->clients; c; c = c->next) {
                                           if (!c->floating)
@@ -69,7 +69,7 @@ static void apply_client_geometry(struct novawm_server *srv,
                                       int mh = m->h - 2 * outer;
 
                                       if (tiled <= 0) {
-                                          /* still update borders of floating clients */
+                                          /* No tiled clients – still update borders of floating ones */
                                           for (struct novawm_client *c = ws->clients; c; c = c->next) {
                                               uint32_t bw = srv->cfg.border_width;
                                               xcb_configure_window(
@@ -92,26 +92,62 @@ static void apply_client_geometry(struct novawm_server *srv,
                                           return;
                                       }
 
-                                      /* simple vertical tiling:
-                                       * each tiled client gets a vertical slot, full width
-                                       */
-                                      int total_height = mh - inner * (tiled + 1);
-                                      if (total_height < 1) total_height = mh;
-                                      int slot_h = total_height / tiled;
-                                      if (slot_h < 1) slot_h = 1;
-
-                                      int y = my + inner;
-
+                                      /* Collect tiled clients into an array so ordering is stable. */
+                                      struct novawm_client *arr[tiled];
+                                      int idx = 0;
                                       for (struct novawm_client *c = ws->clients; c; c = c->next) {
-                                          if (c->floating)
-                                              continue;
+                                          if (!c->floating)
+                                              arr[idx++] = c;
+                                      }
 
-                                          int x = mx + inner;
-                                          int w = mw - 2 * inner;
-                                          int h = slot_h;
+                                      /* Remaining rectangle for the dwindle / spiral. */
+                                      int rx = mx + inner;
+                                      int ry = my + inner;
+                                      int rw = mw - 2 * inner;
+                                      int rh = mh - 2 * inner;
+                                      if (rw < 1) rw = 1;
+                                      if (rh < 1) rh = 1;
 
-                                          apply_client_geometry(srv, c, x, y, w, h);
-                                          y += slot_h + inner;
+                                      float factor = srv->cfg.master_factor;
+                                      if (factor < 0.05f) factor = 0.05f;
+                                      if (factor > 0.95f) factor = 0.95f;
+
+                                      for (int i = 0; i < tiled; i++) {
+                                          struct novawm_client *c = arr[i];
+
+                                          /* Last client gets whatever is left. */
+                                          if (i == tiled - 1) {
+                                              apply_client_geometry(srv, c, rx, ry, rw, rh);
+                                              break;
+                                          }
+
+                                          bool split_vert = (i % 2 == 0);  /* even: vertical, odd: horizontal */
+
+                                          if (split_vert) {
+                                              int cw = (int)(rw * factor);
+                                              if (cw < 1) cw = 1;
+                                              int remw = rw - cw - inner;
+                                              if (remw < 1) remw = 1;
+
+                                              /* client gets left part */
+                                              apply_client_geometry(srv, c, rx, ry, cw, rh);
+
+                                              /* remaining rect becomes right part */
+                                              rx = rx + cw + inner;
+                                              rw = remw;
+                                          } else {
+                                              int ch = (int)(rh * factor);
+                                              if (ch < 1) ch = 1;
+                                              int remh = rh - ch - inner;
+                                              if (remh < 1) remh = 1;
+
+                                              /* client gets top part */
+                                              apply_client_geometry(srv, c, rx, ry, rw, ch);
+
+                                              /* remaining rect becomes bottom part */
+                                              ry = ry + ch + inner;
+                                              rh = remh;
+                                          }
                                       }
 
                                       /* update borders for floating clients as well */
